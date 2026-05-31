@@ -1,0 +1,15 @@
+test.PlusAgent
+X, Y
+Z1
+test.IncAgent
+Z1
+Z2
+test.PlusAgent
+Z1, W
+Z3
+test.PlusAgent
+Z2, Z3
+Result
+test.IncAgent
+Result
+FinalResult
