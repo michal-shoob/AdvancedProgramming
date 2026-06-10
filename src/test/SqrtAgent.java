@@ -1,0 +1,83 @@
+package test;
+
+public class SqrtAgent implements Agent {
+
+    private double x = 0.0;
+
+    private final String name = "SqrtAgent";
+
+    private final String[] subs;
+    private final String[] pubs;
+
+    public SqrtAgent(String[] subs, String[] pubs) {
+
+        if (subs == null || subs.length < 1) {
+            throw new IllegalArgumentException(
+                    "At least one subscription topic is required.");
+        }
+
+        if (pubs == null || pubs.length < 1) {
+            throw new IllegalArgumentException(
+                    "At least one publisher topic is required.");
+        }
+
+        this.subs = subs;
+        this.pubs = pubs;
+
+        TopicManagerSingleton.TopicManager tm =
+                TopicManagerSingleton.get();
+
+        tm.getTopic(subs[0]).subscribe(this);
+        tm.getTopic(pubs[0]).addPublisher(this);
+    }
+
+    @Override
+    public String getName() {
+        return name;
+    }
+
+    @Override
+    public void reset() {
+        x = 0.0;
+    }
+
+    @Override
+    public void callback(String topic, Message msg) {
+
+        if (topic == null || msg == null) {
+            return;
+        }
+
+        double value = msg.asDouble;
+
+        if (Double.isNaN(value) || value < 0) {
+            return;
+        }
+
+        if (topic.equals(subs[0])) {
+            x = value;
+            publishSqrt();
+        }
+    }
+
+    private void publishSqrt() {
+
+        double result = Math.sqrt(x);
+
+        TopicManagerSingleton.get()
+                .getTopic(pubs[0])
+                .publish(new Message(result));
+    }
+
+    @Override
+    public void close() {
+
+        TopicManagerSingleton.TopicManager tm =
+                TopicManagerSingleton.get();
+
+        tm.getTopic(subs[0]).unsubscribe(this);
+        tm.getTopic(pubs[0]).removePublisher(this);
+
+        reset();
+    }
+}

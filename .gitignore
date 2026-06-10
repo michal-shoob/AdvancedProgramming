@@ -1,0 +1,4 @@
+bin/
+*.class
+*.pdf
+config_files/uploaded.conf
