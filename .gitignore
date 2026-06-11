@@ -2,3 +2,9 @@ bin/
 *.class
 *.pdf
 config_files/uploaded.conf
+
+# Exercise submissions - local only, not part of final project
+advancedProgramming1/
+advancedProgramming2/
+advancedProgramming3/
+advancedProgramming4/
