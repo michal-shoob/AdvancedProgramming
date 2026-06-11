@@ -7,33 +7,43 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * View layer: generates an HTML page that visually displays a computational Graph.
- * Topics (prefix "T") are drawn as rectangles, Agents (prefix "A") as circles.
- * Directed arrows follow the edges stored in each Node.
+ * View-layer utility that converts a {@link Graph} into a self-contained HTML page
+ * with an interactive canvas visualisation.
+ *
+ * <p>Nodes are laid out in a circle:</p>
+ * <ul>
+ *   <li><b>Topic nodes</b> (name starts with {@code 'T'}) — drawn as rounded rectangles</li>
+ *   <li><b>Agent nodes</b> (name starts with {@code 'A'}) — drawn as circles</li>
+ * </ul>
+ *
+ * <p>Directed edges are drawn as arrows from source to target using the
+ * {@link Node#getEdges()} lists.  Each topic node also displays the most recent
+ * message value beneath its label.</p>
+ *
+ * <p>All rendering is done in JavaScript on an HTML5 {@code <canvas>} element,
+ * so no external libraries are required.</p>
  */
 public class HtmlGraphWriter {
 
     /**
-     * Returns a list of HTML lines representing a full page that draws the graph.
+     * Generates a complete HTML page that renders {@code graph} on a canvas.
      *
-     * @param graph the Graph (ArrayList of Node) built by Graph.createFromTopics()
-     * @return list of HTML lines
+     * @param graph the computational graph built by {@link Graph#createFromTopics()}
+     * @return a list of HTML lines that together form the full page
      */
     public static List<String> getGraphHTML(Graph graph) {
-        List<String> lines = new ArrayList<String>();
+        List<String> lines = new ArrayList<>();
 
-        // Build JS arrays for nodes and edges
         StringBuilder jsNodes = new StringBuilder("[");
         StringBuilder jsEdges = new StringBuilder("[");
 
-        // Layout: place nodes in a circle
+        // Circular layout parameters
         int total = graph.size();
         int cx = 480, cy = 280, rx = 340, ry = 210;
         boolean firstNode = true;
         boolean firstEdge = true;
 
-        // Map node name -> index for edge references
-        java.util.HashMap<String, Integer> nameToIdx = new java.util.HashMap<String, Integer>();
+        java.util.HashMap<String, Integer> nameToIdx = new java.util.HashMap<>();
 
         int idx = 0;
         for (Node node : graph) {
@@ -43,9 +53,7 @@ public class HtmlGraphWriter {
             int y = (int)(cy + ry * Math.sin(angle));
 
             boolean isTopic = node.getName().startsWith("T");
-            // Display label: strip the leading T or A prefix
-            String label = node.getName().substring(1);
-            // Last message value for topics
+            String label = node.getName().substring(1);   // strip the T/A prefix
             String value = "";
             if (isTopic && node.getMessage() != null) {
                 value = node.getMessage().asText;
@@ -65,8 +73,7 @@ public class HtmlGraphWriter {
         }
         jsNodes.append("]");
 
-        // Build edges from node.getEdges()
-        idx = 0;
+        // Build edge list using node indices
         for (Node node : graph) {
             int fromIdx = nameToIdx.get(node.getName());
             for (Node target : node.getEdges()) {
@@ -76,11 +83,10 @@ public class HtmlGraphWriter {
                 jsEdges.append("{\"from\":").append(fromIdx).append(",\"to\":").append(toIdx).append("}");
                 firstEdge = false;
             }
-            idx++;
         }
         jsEdges.append("]");
 
-        // HTML page
+        // --- HTML page ---
         lines.add("<!DOCTYPE html><html><head><meta charset='UTF-8'><title>Computational Graph</title>");
         lines.add("<style>");
         lines.add("*{box-sizing:border-box;margin:0;padding:0;}");
@@ -142,6 +148,12 @@ public class HtmlGraphWriter {
         return lines;
     }
 
+    /**
+     * Escapes characters that would break a JavaScript string literal.
+     *
+     * @param s the raw string; may be {@code null}
+     * @return the escaped string, or an empty string if {@code s} is {@code null}
+     */
     private static String jsEsc(String s) {
         if (s == null) return "";
         return s.replace("\\","\\\\").replace("\"","\\\"").replace("\n","\\n");

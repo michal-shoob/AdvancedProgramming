@@ -3,34 +3,65 @@ package test;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
 
-// Decorator for Agent that implements the Active Object concurrency pattern.
-// Separates the thread that initiates a callback from the thread that runs it.
+/**
+ * Decorator that wraps any {@link Agent} and executes its callbacks on a
+ * dedicated background thread (Active Object pattern).
+ *
+ * <p>When {@link #callback(String, Message)} is called from a publisher's
+ * thread, the message is placed in a bounded blocking queue and the call
+ * returns immediately.  A single worker thread drains the queue and calls the
+ * wrapped agent's {@code callback} sequentially, ensuring that the underlying
+ * agent never needs to be thread-safe.</p>
+ *
+ * <p>The worker thread is a daemon thread, so it does not prevent JVM shutdown,
+ * but {@link #close()} should still be called explicitly to drain remaining
+ * messages and release resources cleanly.</p>
+ */
 public class ParallelAgent implements Agent {
 
-    private final Agent agent;                         
-    private final BlockingQueue<QueuedMessage> queue;  
-    private final Thread thread;                       
-    private volatile boolean thread_is_active = true;           
+    /** The wrapped agent whose callbacks are executed on the worker thread. */
+    private final Agent agent;
 
-    // Bundles topic and message together so both can be stored in the queue
+    /** Bounded queue that decouples the caller's thread from the worker thread. */
+    private final BlockingQueue<QueuedMessage> queue;
+
+    /** Dedicated worker thread that processes queued callbacks. */
+    private final Thread thread;
+
+    /** Set to {@code false} by {@link #close()} to stop the worker loop. */
+    private volatile boolean thread_is_active = true;
+
+    /**
+     * Pairs a topic name with its message so both can travel through the queue together.
+     */
     private static class QueuedMessage {
         final String topic;
         final Message message;
 
+        /**
+         * @param topic   the topic name associated with the message
+         * @param message the message payload
+         */
         public QueuedMessage(String topic, Message message) {
             this.topic = topic;
             this.message = message;
         }
     }
 
-    // Constructor - takes the agent to wrap and the capacity of the queue
+    /**
+     * Creates a {@code ParallelAgent} wrapping the given agent with a queue of
+     * the specified capacity.
+     *
+     * @param agent    the agent to wrap; must not be {@code null}
+     * @param capacity maximum number of messages the queue can hold before
+     *                 {@link #callback} blocks; must be positive
+     * @throws IllegalArgumentException if {@code agent} is {@code null} or
+     *                                  {@code capacity} is not positive
+     */
     public ParallelAgent(Agent agent, int capacity) {
-        // null agent is invalid
         if (agent == null) {
             throw new IllegalArgumentException("Null agent!");
         }
-
-        // capacity must be positive
         if (capacity <= 0) {
             throw new IllegalArgumentException("capacity must be positive");
         }
@@ -38,20 +69,16 @@ public class ParallelAgent implements Agent {
         this.agent = agent;
         this.queue = new ArrayBlockingQueue<>(capacity);
 
-        // Start a dedicated thread that processes messages from the queue one by one.
-        // take() blocks when queue is empty - thread rests until a message arrives.
         this.thread = new Thread(() -> {
             while (thread_is_active) {
                 try {
                     QueuedMessage next = queue.take();
-                    // check thread_is_active flag again after waking up (close() may have interrupted us)
                     if (!thread_is_active) break;
                     agent.callback(next.topic, next.message);
                 } catch (InterruptedException e) {
-                    // interrupted by close() - exit the loop
                     break;
                 } catch (Exception e) {
-                    
+                    // swallow unexpected exceptions so the worker keeps running
                 }
             }
         });
@@ -60,49 +87,59 @@ public class ParallelAgent implements Agent {
         this.thread.start();
     }
 
+    /**
+     * {@inheritDoc}
+     * Delegates to the wrapped agent's {@link Agent#getName()}.
+     */
     @Override
     public String getName() {
         return agent.getName();
     }
 
+    /**
+     * {@inheritDoc}
+     * Delegates to the wrapped agent's {@link Agent#reset()}.
+     */
     @Override
     public void reset() {
         agent.reset();
     }
 
-    // Instead of running agent.callback() directly, puts the message in the queue.
-    // Returns immediately regardless of how long agent.callback() takes.
+    /**
+     * Enqueues the message for asynchronous delivery to the wrapped agent.
+     * Returns immediately; the actual callback runs on the worker thread.
+     * Silently ignores {@code null} inputs or calls made after {@link #close()}.
+     *
+     * @param topic the topic name
+     * @param msg   the message to deliver
+     */
     @Override
     public void callback(String topic, Message msg) {
-        // ignore null inputs
-        if (topic == null || msg == null) {
-            return;
-        }
-        // ignore callbacks after close()
-        if (!thread_is_active) {
-            return;
-        }
+        if (topic == null || msg == null) return;
+        if (!thread_is_active) return;
         try {
-            // put() blocks if queue is full - waits until space is available
             queue.put(new QueuedMessage(topic, msg));
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
         }
     }
 
-    // Stops the processing thread cleanly - guarantees no threads remain open after this call
+    /**
+     * Stops the worker thread and releases all resources.
+     *
+     * <p>Sets the active flag to {@code false}, interrupts the worker thread
+     * (in case it is blocked on {@code take()}), waits for it to finish, then
+     * closes the wrapped agent.</p>
+     */
     @Override
     public void close() {
         thread_is_active = false;
-        // interrupt the thread in case it is blocked on take()
         thread.interrupt();
         try {
-            // wait for the thread to fully finish before returning
             thread.join();
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
         }
-        // close the wrapped agent as well
         agent.close();
     }
 }

@@ -5,39 +5,61 @@ import java.util.Collections;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
-// Outer class whose only purpose is to expose the get() method
-// that returns the single instance of TopicManager
+/**
+ * Holder class that exposes the application-wide singleton {@link TopicManager}.
+ *
+ * <p>The singleton is obtained via:</p>
+ * <pre>
+ *   TopicManagerSingleton.get().getTopic("MyTopic");
+ * </pre>
+ *
+ * <p>Lazy initialisation is achieved through the
+ * <em>Initialization-on-demand holder</em> idiom: {@link TopicManager} is a
+ * static inner class and is loaded by the JVM only when {@link #get()} is
+ * first called, giving thread-safe lazy initialisation with no locking.</p>
+ */
 public class TopicManagerSingleton {
 
-    // Prevent instantiation of the outer class
+    /** Prevents instantiation of the outer holder class. */
     private TopicManagerSingleton() {}
 
-    // Returns the single instance of TopicManager.
-    // The inner class is only loaded by the JVM when this method is first called,
-    // guaranteeing lazy initialization and thread safety without synchronized or volatile
+    /**
+     * Returns the single shared {@link TopicManager} instance.
+     *
+     * @return the application-wide {@code TopicManager}
+     */
     public static TopicManager get() {
         return TopicManager.instance;
     }
 
-    // Inner static class - loaded on demand (only when first accessed)
-    // This gives us lazy + thread-safe singleton for free via the JVM class loading mechanism
+    /**
+     * Thread-safe registry of all named {@link Topic} objects in the application.
+     *
+     * <p>Uses a {@link ConcurrentHashMap} so that topics can be created and
+     * looked up from multiple threads without external synchronisation.</p>
+     */
     public static class TopicManager {
 
-        // The single instance - created once when the class is first loaded
+        /** The single instance, created when this class is first loaded. */
         private static final TopicManager instance = new TopicManager();
 
-        // Maps topic name -> Topic object
-        // Using Map interface for flexibility, ConcurrentHashMap for concurrency safety
+        /** Maps topic name to its {@link Topic} object. */
         private final Map<String, Topic> topics;
 
-        // Private constructor - no one outside this class can instantiate TopicManager
+        /** Private constructor — use {@link TopicManagerSingleton#get()}. */
         private TopicManager() {
             this.topics = new ConcurrentHashMap<>();
         }
 
-        // Returns existing topic by name, or creates and stores a new one if it doesn't exist.
-        // Returns null if name is null or empty - a topic must have a valid name.
-        // computeIfAbsent is atomic - safe to call from multiple threads simultaneously
+        /**
+         * Returns the topic with the given name, creating it if it does not
+         * yet exist.  The operation is atomic, so concurrent callers requesting
+         * the same name always receive the same {@link Topic} instance.
+         *
+         * @param name the topic name; must not be {@code null} or empty
+         * @return the existing or newly created topic, or {@code null} if
+         *         {@code name} is {@code null} or empty
+         */
         public Topic getTopic(String name) {
             if (name == null || name.isEmpty()) {
                 return null;
@@ -45,12 +67,20 @@ public class TopicManagerSingleton {
             return topics.computeIfAbsent(name, Topic::new);
         }
 
-        // Returns an unmodifiable view of all topics - prevents external modification
+        /**
+         * Returns an unmodifiable view of all topics currently registered.
+         *
+         * @return an unmodifiable collection of {@link Topic} objects
+         */
         public Collection<Topic> getTopics() {
             return Collections.unmodifiableCollection(topics.values());
         }
 
-        // Clears all topics from the map - safe to call even if map is already empty
+        /**
+         * Removes all topics from the registry.
+         * Typically called when loading a new configuration to start with a
+         * clean state.
+         */
         public void clear() {
             topics.clear();
         }

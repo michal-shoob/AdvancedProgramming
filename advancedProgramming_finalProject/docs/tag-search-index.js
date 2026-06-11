@@ -1,0 +1,1 @@
+tagSearchIndex = [{"l":"Config-file format","h":"class test.GenericConfig","d":"Section","u":"test/GenericConfig.html#config-file-format-heading"},{"l":"Serialized Form","h":"","u":"serialized-form.html"}];updateSearchResults();

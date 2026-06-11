@@ -11,15 +11,32 @@ import java.util.Collection;
 import java.util.Map;
 
 /**
- * Handles GET /publish?topic=X&message=Y
- * Publishes a value to a topic and returns an HTML table of all topic values.
+ * Servlet that handles {@code GET /publish?topic=X&amp;message=Y}.
+ *
+ * <p>If both {@code topic} and {@code message} query parameters are present
+ * and {@code message} is a valid double, the value is published to the named
+ * topic via {@link TopicManagerSingleton}.  The response is always an HTML
+ * table showing every currently registered topic and its most recent value,
+ * so the browser panel refreshes after each publish.</p>
+ *
+ * <p>If no parameters are provided (plain {@code GET /publish}) the table is
+ * returned without publishing anything — useful for an initial page load.</p>
  */
 public class TopicDisplayer implements Servlet {
 
+    /**
+     * Publishes the given message (if any) and returns an HTML table of all
+     * topic values.
+     *
+     * @param ri       the parsed request (may contain {@code topic} and
+     *                 {@code message} query parameters)
+     * @param toClient output stream to write the HTTP response to
+     * @throws IOException if writing to the client fails
+     */
     @Override
     public void handle(RequestInfo ri, OutputStream toClient) throws IOException {
         Map<String, String> params = ri.getParameters();
-        String topicName = params.get("topic");
+        String topicName  = params.get("topic");
         String messageStr = params.get("message");
 
         if (topicName != null && messageStr != null && !topicName.isEmpty()) {
@@ -54,10 +71,16 @@ public class TopicDisplayer implements Servlet {
             }
         }
         html.append("</table></body></html>");
-
         sendHtml(toClient, html.toString());
     }
 
+    /**
+     * Writes a complete HTTP 200 response with the given HTML body.
+     *
+     * @param out  the client output stream
+     * @param body the HTML string to send
+     * @throws IOException if writing fails
+     */
     private void sendHtml(OutputStream out, String body) throws IOException {
         String response = "HTTP/1.1 200 OK\r\n"
                 + "Content-Type: text/html; charset=UTF-8\r\n"
@@ -66,10 +89,17 @@ public class TopicDisplayer implements Servlet {
         out.write(response.getBytes("UTF-8"));
     }
 
+    /**
+     * Escapes HTML special characters in the given string to prevent XSS.
+     *
+     * @param s the raw string; may be {@code null}
+     * @return the escaped string, or an empty string if {@code s} is {@code null}
+     */
     private String esc(String s) {
         return s == null ? "" : s.replace("&","&amp;").replace("<","&lt;").replace(">","&gt;");
     }
 
+    /** {@inheritDoc} */
     @Override
     public void close() throws IOException {}
 }

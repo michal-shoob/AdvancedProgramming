@@ -7,17 +7,29 @@ import java.util.Map;
 import test.TopicManagerSingleton.TopicManager;
 
 /**
- * A directed graph represented as a list of Nodes.
- * Nodes represent either Topics (name starts with 'T') or Agents (name starts with 'A').
+ * Directed graph of the current computational pipeline, stored as a list of {@link Node}s.
  *
- * Edges:
- *   Topic  → all Agents subscribed to it  (subs)
- *   Agent  → all Topics it publishes to   (pubs)
+ * <p>Two kinds of node exist, distinguished by a name prefix:</p>
+ * <ul>
+ *   <li><b>Topic nodes</b>  (prefix {@code 'T'}) — one per named {@link Topic}</li>
+ *   <li><b>Agent nodes</b>  (prefix {@code 'A'}) — one per unique agent name</li>
+ * </ul>
+ *
+ * <p>Edges represent data flow:</p>
+ * <ul>
+ *   <li>Topic → Agent : the topic has the agent as a subscriber</li>
+ *   <li>Agent → Topic : the agent publishes to the topic</li>
+ * </ul>
+ *
+ * <p>The graph is rebuilt from scratch on every call to {@link #createFromTopics()},
+ * reflecting the live state of {@link TopicManagerSingleton}.</p>
  */
 public class Graph extends ArrayList<Node> {
 
     /**
-     * Returns true if ANY node in the graph is part of a cycle.
+     * Returns {@code true} if any node in the graph is part of a directed cycle.
+     *
+     * @return {@code true} if a cycle exists
      */
     public boolean hasCycles() {
         for (Node node : this) {
@@ -28,54 +40,36 @@ public class Graph extends ArrayList<Node> {
 
     private Node getOrCreate(Map<String, Node> map, String name) {
         Node n = map.get(name);
-
-        if (n == null) {
-            n = new Node(name);
-            map.put(name, n);
-        }
-
+        if (n == null) { n = new Node(name); map.put(name, n); }
         return n;
     }
-    
+
     /**
-     * Builds the graph from the current state of the TopicManager.
-     * Clears any previous content first.
+     * Rebuilds the graph from the current state of {@link TopicManagerSingleton}.
+     *
+     * <p>Clears any previously stored nodes, then iterates over all registered
+     * topics and creates topic nodes, agent nodes, and the edges that represent
+     * their live subscription and publication relationships.</p>
      */
     public void createFromTopics() {
         clear();
-
         TopicManager tm = TopicManagerSingleton.get();
         Collection<Topic> topics = tm.getTopics();
-
-        // map from name → Node so we don't create duplicates
         Map<String, Node> nodesByName = new HashMap<>();
-
-        // helper lambdas to get-or-create nodes
-        // Topic nodes: prefix 'T'
-        // Agent nodes: prefix 'A'
 
         for (Topic topic : topics) {
             String tName = "T" + topic.getName();
             Node topicNode = getOrCreate(nodesByName, tName);
 
-            // edges: Topic → each subscribed Agent
             for (Agent sub : topic.getSubs()) {
-                String aName  = "A" + sub.getName();
-                Node agentNode = getOrCreate(nodesByName, aName );
+                Node agentNode = getOrCreate(nodesByName, "A" + sub.getName());
                 topicNode.addEdge(agentNode);
             }
-
-            // edges: each publishing Agent → Topic
             for (Agent pub : topic.getPubs()) {
-                String aName = "A" + pub.getName();
-                Node agentNode = getOrCreate(nodesByName, aName );
+                Node agentNode = getOrCreate(nodesByName, "A" + pub.getName());
                 agentNode.addEdge(topicNode);
             }
         }
-
-        // add all nodes to the graph (no duplicates thanks to the map)
         addAll(nodesByName.values());
     }
-    
-
 }

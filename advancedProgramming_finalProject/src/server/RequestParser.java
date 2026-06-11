@@ -6,12 +6,29 @@ import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
 
+/**
+ * Utility class that parses a raw HTTP/1.1 request from a {@link BufferedReader}
+ * into a structured {@link RequestInfo} object.
+ *
+ * <p>Supports GET, POST, and DELETE methods.  Query-string parameters are
+ * extracted from the URI.  The body is read using {@code Content-Length} when
+ * available (preserving blank lines inside multipart uploads), or with a
+ * two-section heuristic for requests without {@code Content-Length}.</p>
+ *
+ * <p>This class is stateless — all methods are static.</p>
+ */
 public class RequestParser {
 
     private static boolean isBlankOrNull(String s) {
         return s == null || s.trim().isEmpty();
     }
 
+    /**
+     * Parses {@code key=value} pairs from a query string and adds them to {@code parameters}.
+     *
+     * @param paramString the raw query string (e.g. {@code "topic=A&message=5"})
+     * @param parameters  the map to populate
+     */
     private static void parseParams(String paramString, Map<String, String> parameters) {
         if (isBlankOrNull(paramString)) return;
         for (String param : paramString.split("&")) {
@@ -22,8 +39,12 @@ public class RequestParser {
     }
 
     /**
-     * Read lines until a blank line or until the reader has no more ready data.
-     * Returns the joined content, or null if nothing was read.
+     * Reads lines until a blank line or no more ready data, joining them with {@code '\n'}.
+     * Used as a fallback body reader when {@code Content-Length} is absent.
+     *
+     * @param reader the source of data
+     * @return the joined section, or {@code null} if nothing was read
+     * @throws IOException if reading fails
      */
     private static String readSection(BufferedReader reader) throws IOException {
         StringBuilder sb = new StringBuilder();
@@ -37,8 +58,21 @@ public class RequestParser {
         return sb.length() > 0 ? sb.toString() : null;
     }
 
+    /**
+     * Parses one complete HTTP request from {@code reader}.
+     *
+     * <p>Body reading strategy:</p>
+     * <ul>
+     *   <li>If {@code Content-Length} is present and positive, exactly that many
+     *       characters are read — blank lines in multipart bodies are preserved.</li>
+     *   <li>Otherwise the two-section heuristic is used.</li>
+     * </ul>
+     *
+     * @param reader positioned at the start of an HTTP request
+     * @return the parsed {@link RequestInfo}, or {@code null} if the request line is blank
+     * @throws IOException if reading fails
+     */
     public static RequestInfo parseRequest(BufferedReader reader) throws IOException {
-        // --- Request line ---
         String requestLine = reader.readLine();
         if (isBlankOrNull(requestLine)) return null;
 
@@ -46,12 +80,10 @@ public class RequestParser {
         String httpCommand = requestParts[0];
         String fullUri     = requestParts.length > 1 ? requestParts[1] : "/";
 
-        // URI path and query string
         String[] uriAndQuery = fullUri.split("\\?", 2);
         String path        = uriAndQuery[0];
         String queryString = uriAndQuery.length > 1 ? uriAndQuery[1] : "";
 
-        // URI segments
         String[] rawSegments = path.split("/");
         int nonEmptyCount = 0;
         for (String s : rawSegments) if (!s.isEmpty()) nonEmptyCount++;
@@ -59,11 +91,9 @@ public class RequestParser {
         int idx = 0;
         for (String s : rawSegments) if (!s.isEmpty()) segments[idx++] = s;
 
-        // Parameters from URI query string ONLY (per spec)
-        Map<String, String> parameters = new HashMap<String, String>();
+        Map<String, String> parameters = new HashMap<>();
         parseParams(queryString, parameters);
 
-        // --- Headers: read until blank line ---
         int contentLength = 0;
         String line;
         while ((line = reader.readLine()) != null && !isBlankOrNull(line)) {
@@ -73,9 +103,7 @@ public class RequestParser {
                 } catch (NumberFormatException ignored) {}
             }
         }
-        // blank line consumed — headers done
 
-        // --- Body ---
         byte[] content = new byte[0];
 
         if (contentLength > 0) {
@@ -90,8 +118,7 @@ public class RequestParser {
             }
             content = new String(buf, 0, totalRead).getBytes("UTF-8");
         } else {
-            // No Content-Length (e.g. GET with no body) — fall back to
-            // the two-section heuristic.
+            // No Content-Length — fall back to the two-section heuristic.
             String sectionA = readSection(reader);
             if (sectionA != null) {
                 String sectionB = readSection(reader);
@@ -107,13 +134,25 @@ public class RequestParser {
     }
 
     // -------------------------------------------------------------------------
+
+    /**
+     * Immutable value object holding the parsed components of one HTTP request.
+     */
     public static class RequestInfo {
+
         private final String httpCommand;
         private final String uri;
         private final String[] uriSegments;
         private final Map<String, String> parameters;
         private final byte[] content;
 
+        /**
+         * @param httpCommand the HTTP method (e.g. {@code "GET"})
+         * @param uri         the full URI including query string
+         * @param uriSegments the non-empty path segments
+         * @param parameters  query-string parameters
+         * @param content     the raw request body bytes
+         */
         public RequestInfo(String httpCommand, String uri, String[] uriSegments,
                            Map<String, String> parameters, byte[] content) {
             this.httpCommand = httpCommand;
@@ -123,21 +162,27 @@ public class RequestParser {
             this.content     = content;
         }
 
+        /** @return the HTTP method string */
         public String getHttpCommand()             { return httpCommand; }
+
+        /** @return the full request URI */
         public String getUri()                     { return uri; }
+
+        /** @return non-empty path segments (e.g. {@code ["app","index.html"]}) */
         public String[] getUriSegments()           { return uriSegments; }
+
+        /** @return query-string parameters as a name→value map */
         public Map<String, String> getParameters() { return parameters; }
+
+        /** @return raw body bytes; empty array if no body */
         public byte[] getContent()                 { return content; }
 
         @Override
         public String toString() {
-            return "RequestInfo{" +
-                    "httpCommand='" + httpCommand + '\'' +
-                    ", uri='" + uri + '\'' +
-                    ", uriSegments=" + Arrays.toString(uriSegments) +
-                    ", parameters=" + parameters +
-                    ", content='" + new String(content) + '\'' +
-                    '}';
+            return "RequestInfo{httpCommand='" + httpCommand + "', uri='" + uri
+                    + "', uriSegments=" + Arrays.toString(uriSegments)
+                    + ", parameters=" + parameters
+                    + ", content='" + new String(content) + "'}";
         }
     }
 }
