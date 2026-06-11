@@ -17,7 +17,12 @@ import java.util.Map;
  */
 public class ConfLoader implements Servlet {
 
+    private final String configDir;
     private GenericConfig currentConfig = null;
+
+    public ConfLoader(String configDir) {
+        this.configDir = configDir;
+    }
 
     @Override
     public synchronized void handle(RequestInfo ri, OutputStream toClient) throws IOException {
@@ -65,7 +70,7 @@ public class ConfLoader implements Servlet {
         } else {
             try {
                 // Save config file to disk
-                File dir = new File("config_files");
+                File dir = new File(configDir);
                 if (!dir.exists()) dir.mkdirs();
                 File saved = new File(dir, filename);
                 try (FileWriter fw = new FileWriter(saved)) { fw.write(configContent); }
