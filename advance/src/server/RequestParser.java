@@ -76,24 +76,30 @@ public class RequestParser {
         // blank line consumed — headers done
 
         // --- Body ---
-        // Per PDF structure:
-        //   [Section A: optional metadata e.g. filename="hello.txt"]
-        //   [blank line]
-        //   [Section B: actual content]
-        //   [blank line]
-        //
-        // If only one section, it is the content.
         byte[] content = new byte[0];
 
-        String sectionA = readSection(reader);
-        if (sectionA != null) {
-            String sectionB = readSection(reader);
-            if (sectionB != null && !sectionB.isEmpty()) {
-                // A=metadata, B=content
-                content = (sectionB + "\n").getBytes();
-            } else {
-                // Only A — it is the content
-                content = (sectionA + "\n").getBytes();
+        if (contentLength > 0) {
+            // Read the full body using Content-Length so blank lines inside
+            // the body (e.g. multi-block config files) are preserved.
+            char[] buf = new char[contentLength];
+            int totalRead = 0;
+            while (totalRead < contentLength) {
+                int r = reader.read(buf, totalRead, contentLength - totalRead);
+                if (r < 0) break;
+                totalRead += r;
+            }
+            content = new String(buf, 0, totalRead).getBytes("UTF-8");
+        } else {
+            // No Content-Length (e.g. GET with no body) — fall back to
+            // the two-section heuristic.
+            String sectionA = readSection(reader);
+            if (sectionA != null) {
+                String sectionB = readSection(reader);
+                if (sectionB != null && !sectionB.isEmpty()) {
+                    content = (sectionB + "\n").getBytes();
+                } else {
+                    content = (sectionA + "\n").getBytes();
+                }
             }
         }
 

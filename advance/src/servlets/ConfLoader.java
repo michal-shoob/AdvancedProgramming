@@ -20,7 +20,7 @@ public class ConfLoader implements Servlet {
     private GenericConfig currentConfig = null;
 
     @Override
-    public void handle(RequestInfo ri, OutputStream toClient) throws IOException {
+    public synchronized void handle(RequestInfo ri, OutputStream toClient) throws IOException {
         Map<String, String> params = ri.getParameters();
         byte[] contentBytes = ri.getContent();
 
@@ -29,20 +29,35 @@ public class ConfLoader implements Servlet {
         filename = filename.replaceAll("^\"|\"$", "").trim();
         if (filename.isEmpty()) filename = "uploaded.conf";
 
-        String rawContent = new String(contentBytes, "UTF-8").trim();
+        String rawContent = new String(contentBytes, "UTF-8");
 
-        // === התיקון: ניקוי שורות ה-Boundary שהדפדפן מוסיף אוטומטית ===
-        StringBuilder cleanContent = new StringBuilder();
-        for (String line : rawContent.split("\n")) {
-            String trimmed = line.trim();
-            // נתעלם משורות של WebKitFormBoundary שהדפדפן דוחף לסוף הקובץ
-            if (trimmed.startsWith("----") || trimmed.contains("WebKitFormBoundary")) {
-                continue;
-            }
-            cleanContent.append(trimmed).append("\n");
+        // Extract only the file content from a multipart/form-data body.
+        // Multipart structure: --boundary → part-headers → blank line → content → --boundary--
+        // If the first non-empty line starts with "--" it is a multipart upload;
+        // skip everything up to (and including) the first blank line, then strip
+        // the closing boundary at the end.  Otherwise treat the body as raw content.
+        String configContent;
+        boolean isMultipart = false;
+        for (String l : rawContent.split("\r?\n")) {
+            if (!l.trim().isEmpty()) { isMultipart = l.trim().startsWith("--"); break; }
         }
-        String configContent = cleanContent.toString().trim();
-        // =========================================================
+
+        if (isMultipart) {
+            // Find the blank line that separates part-headers from file content
+            int sep = rawContent.indexOf("\r\n\r\n");
+            String afterHeaders = (sep >= 0)
+                    ? rawContent.substring(sep + 4)
+                    : rawContent.replaceFirst("(?s)^.*?\n\n", "");
+
+            // Strip closing boundary lines (start with "--") and normalise
+            StringBuilder sb = new StringBuilder();
+            for (String line : afterHeaders.split("\r?\n")) {
+                if (!line.trim().startsWith("--")) sb.append(line.trim()).append("\n");
+            }
+            configContent = sb.toString().trim();
+        } else {
+            configContent = rawContent.trim();
+        }
 
         String body;
         if (configContent.isEmpty()) {
