@@ -12,8 +12,8 @@ public class Main {
     public static void main(String[] args) throws Exception {
         HTTPServer server = new MyHTTPServer(8080, 5);
 
-        // Work from wherever the project was launched — git root or advance/ subfolder
-        String base = new java.io.File("html_files").isDirectory() ? "" : "advance/";
+        // Work from wherever the project was launched — git root or project subfolder
+        String base = new java.io.File("html_files").isDirectory() ? "" : "advancedProgramming_finalProject/";
 
         server.addServlet("GET",  "/publish", new TopicDisplayer());
         server.addServlet("POST", "/upload",  new ConfLoader(base + "config_files"));
